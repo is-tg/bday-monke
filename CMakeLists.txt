@@ -54,7 +54,7 @@ set_property(TARGET app PROPERTY WIN32_EXECUTABLE TRUE)
 if(EMSCRIPTEN)
     set_property(TARGET app PROPERTY SUFFIX ".html")
     target_link_options(app PRIVATE "--shell-file=${CMAKE_SOURCE_DIR}/bare.html")
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE 
+    target_link_libraries(${EXECUTABLE_NAME}
         "--preload-file \"${CMAKE_CURRENT_LIST_DIR}/assets/monke.obj@/\""
         "--preload-file \"${CMAKE_CURRENT_LIST_DIR}/assets/hbday.wav@/\""
     )

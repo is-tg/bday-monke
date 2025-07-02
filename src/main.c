@@ -101,7 +101,7 @@ static SDL_Texture* create_circle_texture(int size) {
 }
 
 static float random_float(float min, float max) {
-    return min + (float)rand() / RAND_MAX * (max - min);
+    return min + SDL_randf() * (max - min);
 }
 
 static SDL_FColor random_confetti_color() {
@@ -115,7 +115,7 @@ static SDL_FColor random_confetti_color() {
         FCOLOR(255, 200, 100, 255),
         FCOLOR(200, 100, 255, 255),
     };
-    return colors[rand() % 8];
+    return colors[SDL_rand(8)];
 }
 
 static void spawn_confetti(float x, float y) {
@@ -212,12 +212,12 @@ static void render_confetti() {
     
     SDL_RenderGeometry(renderer, circle_texture, vertices, vertex_index, NULL, 0);
     
-    free(vertices);
+    SDL_free(vertices);
 }
 
 static Vec3 rotate_x(Vec3 v, float angle) {
-    float cos_a = cosf(angle);
-    float sin_a = sinf(angle);
+    float cos_a = SDL_cosf(angle);
+    float sin_a = SDL_sinf(angle);
     return (Vec3){
         v.x,
         v.y * cos_a - v.z * sin_a,
@@ -226,8 +226,8 @@ static Vec3 rotate_x(Vec3 v, float angle) {
 }
 
 static Vec3 rotate_y(Vec3 v, float angle) {
-    float cos_a = cosf(angle);
-    float sin_a = sinf(angle);
+    float cos_a = SDL_cosf(angle);
+    float sin_a = SDL_sinf(angle);
     return (Vec3){
         v.x * cos_a + v.z * sin_a,
         v.y,
@@ -241,8 +241,8 @@ static Vec3 project_3d_to_2d(Vec3 v, int screen_width, int screen_height) {
     
     if (v.z > -0.1f) v.z = -0.1f;
     
-    float projected_x = (v.x / (-v.z * tanf(fov / 2.0f))) * screen_width / 2.0f + screen_width / 2.0f;
-    float projected_y = (-v.y / (-v.z * tanf(fov / 2.0f) / aspect)) * screen_height / 2.0f + screen_height / 2.0f;
+    float projected_x = (v.x / (-v.z * SDL_tanf(fov / 2.0f))) * screen_width / 2.0f + screen_width / 2.0f;
+    float projected_y = (-v.y / (-v.z * SDL_tanf(fov / 2.0f) / aspect)) * screen_height / 2.0f + screen_height / 2.0f;
     
     return (Vec3){projected_x, projected_y, v.z};
 }
@@ -279,22 +279,23 @@ static int load_obj_file(const char *filename, Mesh *mesh) {
     while (fgets(line, sizeof(line), file)) {
         if (line[0] == 'v' && line[1] == ' ') {
             float x, y, z;
-            if (sscanf(line, "v %f %f %f", &x, &y, &z) == 3) {
+            if (SDL_sscanf(line, "v %f %f %f", &x, &y, &z) == 3) {
                 mesh->vertices[v_index++] = (Vec3){x, y, z};
             }
         }
         else if (line[0] == 'f' && line[1] == ' ') {
             int v1, v2, v3;
-            char *token = strtok(line + 2, " \t\n");
+            char *token;
+            SDL_strtok_r(line + 2, " \t\n", &token);
             
             if (token) {
-                v1 = atoi(token) - 1;
-                token = strtok(NULL, " \t\n");
+                v1 = SDL_atoi(token) - 1;
+                SDL_strtok_r(NULL, " \t\n", &token);
                 if (token) {
-                    v2 = atoi(token) - 1;
-                    token = strtok(NULL, " \t\n");
+                    v2 = SDL_atoi(token) - 1;
+                    SDL_strtok_r(NULL, " \t\n", &token);
                     if (token) {
-                        v3 = atoi(token) - 1;
+                        v3 = SDL_atoi(token) - 1;
                         
                         if (v1 >= 0 && v1 < vertex_count && 
                             v2 >= 0 && v2 < vertex_count && 
@@ -397,10 +398,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
     switch (event->type) {
-        case SDL_EVENT_QUIT:
+        case SDL_EVENT_QUIT: {
             return SDL_APP_SUCCESS;
-            
-        case SDL_EVENT_KEY_DOWN:
+        }
+
+        case SDL_EVENT_KEY_DOWN: {
             if (event->key.scancode == SDL_SCANCODE_ESCAPE) {
                 return SDL_APP_SUCCESS;
             }
@@ -418,8 +420,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
                 transform.scale = 1.0f;
             }
             break;
-            
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        }
+
+        case SDL_EVENT_MOUSE_BUTTON_DOWN: {
             if (event->button.button == SDL_BUTTON_LEFT) {
                 spawn_confetti(event->button.x, event->button.y);
             } else if (event->button.button == SDL_BUTTON_RIGHT) {
@@ -428,52 +431,60 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
                 last_mouse_y = event->button.y;
             }
             break;
+        }
 
-        case SDL_EVENT_FINGER_UP:
+        case SDL_EVENT_FINGER_UP: {
             spawn_confetti(event->button.x, event->button.y);
             break;
-            
-        case SDL_EVENT_MOUSE_BUTTON_UP:
+        }
+
+        case SDL_EVENT_MOUSE_BUTTON_UP: {
             if (event->button.button == SDL_BUTTON_RIGHT) {
                 mouse_down = 0;
             }
             break;
-            
-        case SDL_EVENT_MOUSE_MOTION:
+        }
+
+        case SDL_EVENT_MOUSE_MOTION: {
             if (mouse_down) {
                 int dx = event->motion.x - last_mouse_x;
                 int dy = event->motion.y - last_mouse_y;
-                
+
                 if (dx != 0 || dy != 0) {
                     transform.rotation_y += dx * 0.005f; 
                     transform.rotation_x += dy * 0.005f;
-                    
+
                     last_mouse_x = event->motion.x;
                     last_mouse_y = event->motion.y;
                 }
             }
             break;
-        
-        case SDL_EVENT_FINGER_MOTION:
+        }
+
+        case SDL_EVENT_FINGER_MOTION: {
             int dx = event->tfinger.x - last_mouse_x;
             int dy = event->tfinger.y - last_mouse_y;
+
             if (dx != 0 || dy != 0) {
                 transform.rotation_y += dx * 0.005f; 
                 transform.rotation_x += dy * 0.005f;
-                
+
                 last_mouse_x = event->tfinger.x;
                 last_mouse_y = event->tfinger.y;
             }
             break;
-            
-        case SDL_EVENT_MOUSE_WHEEL:
+        }
+
+        case SDL_EVENT_MOUSE_WHEEL: {
             if (event->wheel.y > 0) {
                 transform.scale *= 1.1f;
             } else if (event->wheel.y < 0) {
                 transform.scale *= 0.9f;
             }
             break;
+        }
     }
+
     return SDL_APP_CONTINUE;
 }
 

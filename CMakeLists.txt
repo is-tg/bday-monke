@@ -1,5 +1,25 @@
 cmake_minimum_required(VERSION 3.12.0)
+
+# set the output directory for built objects.
+# This makes sure that the dynamic library goes into the build directory automatically.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
+
+# prevent installing to system directories. 
+set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}" CACHE INTERNAL "")
+
 project(SDL_App)
+
+if(EMSCRIPTEN)
+    set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
+    set(SDL_SHARED OFF)
+endif()
+
+if(MSVC)
+    if(NOT CMAKE_GENERATOR STREQUAL "Ninja")
+        add_definitions(/MP)				# parallelize each target, unless Ninja is the generator
+    endif()
+endif()
 
 # By configuring CMake with -DDOWNLOAD_DEPENDENCIES=ON/OFF,
 # users can choose between downloading dependencies or using system libraries
@@ -34,4 +54,8 @@ set_property(TARGET app PROPERTY WIN32_EXECUTABLE TRUE)
 if(EMSCRIPTEN)
     set_property(TARGET app PROPERTY SUFFIX ".html")
     target_link_options(app PRIVATE "--shell-file=${CMAKE_SOURCE_DIR}/bare.html")
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE 
+        "--preload-file \"${CMAKE_CURRENT_LIST_DIR}/assets/monke.obj@/\""
+        "--preload-file \"${CMAKE_CURRENT_LIST_DIR}/assets/hbday.wav@/\""
+    )
 endif()

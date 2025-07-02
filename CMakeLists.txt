@@ -6,15 +6,22 @@ project(SDL_App)
 option(DOWNLOAD_DEPENDENCIES "Download dependencies" FALSE)
 
 if(DOWNLOAD_DEPENDENCIES)
-    # FetchContent downloads and configures dependencies
     include(FetchContent)
+
     FetchContent_Declare(
         SDL3
         GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
         GIT_TAG "main"
         EXCLUDE_FROM_ALL
     )
-    FetchContent_MakeAvailable(SDL3)
+
+    FetchContent_Declare(
+        assimp
+        GIT_REPOSITORY "https://github.com/assimp/assimp.git"
+        GIT_TAG "master"
+    )
+
+    FetchContent_MakeAvailable(SDL3 assimp)
 else()
     # find_package looks for already-installed system packages.
     # Configure with `-DCMAKE_PREFIX_PATH="/path/to/package1;/path/to/package2"`

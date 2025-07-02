@@ -7,34 +7,25 @@ option(DOWNLOAD_DEPENDENCIES "Download dependencies" FALSE)
 
 if(DOWNLOAD_DEPENDENCIES)
     include(FetchContent)
-
     FetchContent_Declare(
         SDL3
         GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
         GIT_TAG "main"
         EXCLUDE_FROM_ALL
     )
-
-    FetchContent_Declare(
-        assimp
-        GIT_REPOSITORY "https://github.com/assimp/assimp.git"
-        GIT_TAG "master"
-    )
-
-    FetchContent_MakeAvailable(SDL3 assimp)
+    FetchContent_MakeAvailable(SDL3)
 else()
     # find_package looks for already-installed system packages.
     # Configure with `-DCMAKE_PREFIX_PATH="/path/to/package1;/path/to/package2"`
     # to add search paths.
     find_package(SDL3 CONFIG REQUIRED)
-    find_package(assimp CONFIG REQUIRED)
 endif()
 
 add_executable(app
     src/main.c
 )
 
-target_link_libraries(app PRIVATE SDL3::SDL3 assimp::assimp)
+target_link_libraries(app PRIVATE SDL3::SDL3)
 
 # This is safe to set on all platforms. Otherwise your SDL app will
 #  have a terminal window pop up with it on Windows.

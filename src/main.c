@@ -1,20 +1,12 @@
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL.h>
-#include <assimp/cimport.h>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
-
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-// #include <math.h>
+#include <stdio.h>
 
 #define FCOLOR(r, g, b, a) ((SDL_FColor) {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f})
 #define DARK_GREY FCOLOR(95, 87, 79, 255)
 #define PEACH FCOLOR(255, 157, 129, 255)
 #define WHITE FCOLOR(255, 255, 255, 255)
-#define LIGHT_GREY FCOLOR(200, 200, 200, 255)
 
 #define MAX_CONFETTI 1000
 #define CONFETTI_PER_CLICK 20
@@ -256,69 +248,68 @@ static Vec3 project_3d_to_2d(Vec3 v, int screen_width, int screen_height) {
 }
 
 static int load_obj_file(const char *filename, Mesh *mesh) {
-    // Import the 3D model using Assimp
-    const struct aiScene* scene = aiImportFile(filename, 
-        aiProcess_Triangulate |           // Convert polygons to triangles
-        aiProcess_FlipUVs |              // Flip texture coordinates if needed
-        aiProcess_GenNormals |           // Generate normals if missing
-        aiProcess_JoinIdenticalVertices  // Remove duplicate vertices
-    );
-    
-    if (!scene) {
-        SDL_Log("Failed to load OBJ file: %s - %s", filename, aiGetErrorString());
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        SDL_Log("Failed to open OBJ file: %s", filename);
         return 0;
     }
     
-    if (scene->mNumMeshes == 0) {
-        SDL_Log("No meshes found in file: %s", filename);
-        aiReleaseImport(scene);
-        return 0;
+    char line[256];
+    int vertex_count = 0, face_count = 0;
+    
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == 'v' && line[1] == ' ') vertex_count++;
+        else if (line[0] == 'f' && line[1] == ' ') face_count++;
     }
     
-    // Use the first mesh (you can modify this to handle multiple meshes)
-    const struct aiMesh* ai_mesh = scene->mMeshes[0];
-    
-    // Allocate memory for vertices and faces
-    mesh->vertex_count = ai_mesh->mNumVertices;
-    mesh->face_count = ai_mesh->mNumFaces;
-    
-    mesh->vertices = SDL_malloc(mesh->vertex_count * sizeof(Vec3));
-    mesh->faces = SDL_malloc(mesh->face_count * sizeof(Face));
+    mesh->vertices = SDL_malloc(vertex_count * sizeof(Vec3));
+    mesh->faces = SDL_malloc(face_count * sizeof(Face));
+    mesh->vertex_count = vertex_count;
+    mesh->face_count = face_count;
     
     if (!mesh->vertices || !mesh->faces) {
-        SDL_Log("Memory allocation failed");
-        aiReleaseImport(scene);
+        SDL_Log("Failed to allocate memory for mesh");
+        fclose(file);
         return 0;
     }
     
-    // Copy vertices
-    for (unsigned int i = 0; i < ai_mesh->mNumVertices; i++) {
-        mesh->vertices[i].x = ai_mesh->mVertices[i].x;
-        mesh->vertices[i].y = ai_mesh->mVertices[i].y;
-        mesh->vertices[i].z = ai_mesh->mVertices[i].z;
-    }
+    rewind(file);
+    int v_index = 0, f_index = 0;
     
-    // Copy faces (triangles only due to aiProcess_Triangulate)
-    for (unsigned int i = 0; i < ai_mesh->mNumFaces; i++) {
-        const struct aiFace* face = &ai_mesh->mFaces[i];
-        
-        if (face->mNumIndices == 3) {
-            mesh->faces[i].v1 = face->mIndices[0];
-            mesh->faces[i].v2 = face->mIndices[1];
-            mesh->faces[i].v3 = face->mIndices[2];
-        } else {
-            SDL_Log("Warning: Non-triangular face found at index %d", i);
-            // Handle error or skip this face
-            mesh->faces[i].v1 = mesh->faces[i].v2 = mesh->faces[i].v3 = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == 'v' && line[1] == ' ') {
+            float x, y, z;
+            if (sscanf(line, "v %f %f %f", &x, &y, &z) == 3) {
+                mesh->vertices[v_index++] = (Vec3){x, y, z};
+            }
+        }
+        else if (line[0] == 'f' && line[1] == ' ') {
+            int v1, v2, v3;
+            char *token = strtok(line + 2, " \t\n");
+            
+            if (token) {
+                v1 = atoi(token) - 1;
+                token = strtok(NULL, " \t\n");
+                if (token) {
+                    v2 = atoi(token) - 1;
+                    token = strtok(NULL, " \t\n");
+                    if (token) {
+                        v3 = atoi(token) - 1;
+                        
+                        if (v1 >= 0 && v1 < vertex_count && 
+                            v2 >= 0 && v2 < vertex_count && 
+                            v3 >= 0 && v3 < vertex_count) {
+                            mesh->faces[f_index++] = (Face){v1, v2, v3};
+                        }
+                    }
+                }
+            }
         }
     }
     
-    SDL_Log("Loaded OBJ with Assimp: %d vertices, %d faces", 
-            mesh->vertex_count, mesh->face_count);
-    
-    // Clean up Assimp resources
-    aiReleaseImport(scene);
-    
+    fclose(file);
+    SDL_Log("Loaded OBJ: %d vertices, %d faces", vertex_count, f_index);
+    mesh->face_count = f_index;
     return 1;
 }
 
@@ -429,13 +420,17 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
             break;
             
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            if (event->button.button == SDL_BUTTON_RIGHT) {
+            if (event->button.button == SDL_BUTTON_LEFT) {
+                spawn_confetti(event->button.x, event->button.y);
+            } else if (event->button.button == SDL_BUTTON_RIGHT) {
                 mouse_down = 1;
                 last_mouse_x = event->button.x;
                 last_mouse_y = event->button.y;
-            } else if (event->button.button == SDL_BUTTON_LEFT) {
-                spawn_confetti(event->button.x, event->button.y);
             }
+            break;
+
+        case SDL_EVENT_FINGER_UP:
+            spawn_confetti(event->button.x, event->button.y);
             break;
             
         case SDL_EVENT_MOUSE_BUTTON_UP:
@@ -456,6 +451,18 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
                     last_mouse_x = event->motion.x;
                     last_mouse_y = event->motion.y;
                 }
+            }
+            break;
+        
+        case SDL_EVENT_FINGER_MOTION:
+            int dx = event->tfinger.x - last_mouse_x;
+            int dy = event->tfinger.y - last_mouse_y;
+            if (dx != 0 || dy != 0) {
+                transform.rotation_y += dx * 0.005f; 
+                transform.rotation_x += dy * 0.005f;
+                
+                last_mouse_x = event->tfinger.x;
+                last_mouse_y = event->tfinger.y;
             }
             break;
             

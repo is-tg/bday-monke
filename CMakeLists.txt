@@ -20,13 +20,14 @@ else()
     # Configure with `-DCMAKE_PREFIX_PATH="/path/to/package1;/path/to/package2"`
     # to add search paths.
     find_package(SDL3 CONFIG REQUIRED)
+    find_package(assimp CONFIG REQUIRED)
 endif()
 
 add_executable(app
     src/main.c
 )
 
-target_link_libraries(app PRIVATE SDL3::SDL3)
+target_link_libraries(app PRIVATE SDL3::SDL3 assimp::assimp)
 
 # This is safe to set on all platforms. Otherwise your SDL app will
 #  have a terminal window pop up with it on Windows.

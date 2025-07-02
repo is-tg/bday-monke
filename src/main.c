@@ -1,10 +1,14 @@
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
+#include <assimp/cimport.h>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <string.h>
+// #include <math.h>
 
 #define FCOLOR(r, g, b, a) ((SDL_FColor) {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f})
 #define DARK_GREY FCOLOR(95, 87, 79, 255)
@@ -166,7 +170,7 @@ static void render_confetti() {
     
     if (active_count == 0) return;
     
-    SDL_Vertex *vertices = malloc(active_count * 6 * sizeof(SDL_Vertex));
+    SDL_Vertex *vertices = SDL_malloc(active_count * 6 * sizeof(SDL_Vertex));
     if (!vertices) return;
     
     int vertex_index = 0;
@@ -252,75 +256,76 @@ static Vec3 project_3d_to_2d(Vec3 v, int screen_width, int screen_height) {
 }
 
 static int load_obj_file(const char *filename, Mesh *mesh) {
-    FILE *file = fopen(filename, "r");
-    if (!file) {
-        SDL_Log("Failed to open OBJ file: %s", filename);
+    // Import the 3D model using Assimp
+    const struct aiScene* scene = aiImportFile(filename, 
+        aiProcess_Triangulate |           // Convert polygons to triangles
+        aiProcess_FlipUVs |              // Flip texture coordinates if needed
+        aiProcess_GenNormals |           // Generate normals if missing
+        aiProcess_JoinIdenticalVertices  // Remove duplicate vertices
+    );
+    
+    if (!scene) {
+        SDL_Log("Failed to load OBJ file: %s - %s", filename, aiGetErrorString());
         return 0;
     }
     
-    char line[256];
-    int vertex_count = 0, face_count = 0;
-    
-    while (fgets(line, sizeof(line), file)) {
-        if (line[0] == 'v' && line[1] == ' ') vertex_count++;
-        else if (line[0] == 'f' && line[1] == ' ') face_count++;
+    if (scene->mNumMeshes == 0) {
+        SDL_Log("No meshes found in file: %s", filename);
+        aiReleaseImport(scene);
+        return 0;
     }
     
-    mesh->vertices = malloc(vertex_count * sizeof(Vec3));
-    mesh->faces = malloc(face_count * sizeof(Face));
-    mesh->vertex_count = vertex_count;
-    mesh->face_count = face_count;
+    // Use the first mesh (you can modify this to handle multiple meshes)
+    const struct aiMesh* ai_mesh = scene->mMeshes[0];
+    
+    // Allocate memory for vertices and faces
+    mesh->vertex_count = ai_mesh->mNumVertices;
+    mesh->face_count = ai_mesh->mNumFaces;
+    
+    mesh->vertices = SDL_malloc(mesh->vertex_count * sizeof(Vec3));
+    mesh->faces = SDL_malloc(mesh->face_count * sizeof(Face));
     
     if (!mesh->vertices || !mesh->faces) {
-        SDL_Log("Failed to allocate memory for mesh");
-        fclose(file);
+        SDL_Log("Memory allocation failed");
+        aiReleaseImport(scene);
         return 0;
     }
     
-    rewind(file);
-    int v_index = 0, f_index = 0;
+    // Copy vertices
+    for (unsigned int i = 0; i < ai_mesh->mNumVertices; i++) {
+        mesh->vertices[i].x = ai_mesh->mVertices[i].x;
+        mesh->vertices[i].y = ai_mesh->mVertices[i].y;
+        mesh->vertices[i].z = ai_mesh->mVertices[i].z;
+    }
     
-    while (fgets(line, sizeof(line), file)) {
-        if (line[0] == 'v' && line[1] == ' ') {
-            float x, y, z;
-            if (sscanf(line, "v %f %f %f", &x, &y, &z) == 3) {
-                mesh->vertices[v_index++] = (Vec3){x, y, z};
-            }
-        }
-        else if (line[0] == 'f' && line[1] == ' ') {
-            int v1, v2, v3;
-            char *token = strtok(line + 2, " \t\n");
-            
-            if (token) {
-                v1 = atoi(token) - 1;
-                token = strtok(NULL, " \t\n");
-                if (token) {
-                    v2 = atoi(token) - 1;
-                    token = strtok(NULL, " \t\n");
-                    if (token) {
-                        v3 = atoi(token) - 1;
-                        
-                        if (v1 >= 0 && v1 < vertex_count && 
-                            v2 >= 0 && v2 < vertex_count && 
-                            v3 >= 0 && v3 < vertex_count) {
-                            mesh->faces[f_index++] = (Face){v1, v2, v3};
-                        }
-                    }
-                }
-            }
+    // Copy faces (triangles only due to aiProcess_Triangulate)
+    for (unsigned int i = 0; i < ai_mesh->mNumFaces; i++) {
+        const struct aiFace* face = &ai_mesh->mFaces[i];
+        
+        if (face->mNumIndices == 3) {
+            mesh->faces[i].v1 = face->mIndices[0];
+            mesh->faces[i].v2 = face->mIndices[1];
+            mesh->faces[i].v3 = face->mIndices[2];
+        } else {
+            SDL_Log("Warning: Non-triangular face found at index %d", i);
+            // Handle error or skip this face
+            mesh->faces[i].v1 = mesh->faces[i].v2 = mesh->faces[i].v3 = 0;
         }
     }
     
-    fclose(file);
-    SDL_Log("Loaded OBJ: %d vertices, %d faces", vertex_count, f_index);
-    mesh->face_count = f_index;
+    SDL_Log("Loaded OBJ with Assimp: %d vertices, %d faces", 
+            mesh->vertex_count, mesh->face_count);
+    
+    // Clean up Assimp resources
+    aiReleaseImport(scene);
+    
     return 1;
 }
 
 static void render_mesh(Mesh *mesh, Transform *transform, int screen_width, int screen_height) {
     if (!mesh->vertices || !mesh->faces) return;
     
-    Vec3 *projected = malloc(mesh->vertex_count * sizeof(Vec3));
+    Vec3 *projected = SDL_malloc(mesh->vertex_count * sizeof(Vec3));
     if (!projected) return;
     
     for (int i = 0; i < mesh->vertex_count; i++) {
@@ -361,32 +366,7 @@ static void render_mesh(Mesh *mesh, Transform *transform, int screen_width, int 
         }
     }
     
-    free(projected);
-}
-
-static void create_default_cube() {
-    mesh.vertex_count = 8;
-    mesh.face_count = 12;
-    
-    mesh.vertices = malloc(8 * sizeof(Vec3));
-    mesh.faces = malloc(12 * sizeof(Face));
-    
-    Vec3 cube_vertices[] = {
-        {-1, -1, -1}, {1, -1, -1}, {1, 1, -1}, {-1, 1, -1},
-        {-1, -1,  1}, {1, -1,  1}, {1, 1,  1}, {-1, 1,  1}
-    };
-    
-    Face cube_faces[] = {
-        {0, 1, 2}, {2, 3, 0},
-        {4, 6, 5}, {6, 4, 7},
-        {0, 3, 7}, {7, 4, 0},
-        {1, 5, 6}, {6, 2, 1},
-        {0, 4, 5}, {5, 1, 0},
-        {3, 2, 6}, {6, 7, 3}
-    };
-    
-    memcpy(mesh.vertices, cube_vertices, 8 * sizeof(Vec3));
-    memcpy(mesh.faces, cube_faces, 12 * sizeof(Face));
+    SDL_free(projected);
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate)
@@ -513,31 +493,28 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         SDL_Log("Failed to create circle texture");
     }
     
-    srand((unsigned int)SDL_GetTicks());
+    SDL_srand((unsigned int)SDL_GetTicks());
     
+    char *obj_filename = "assets/monke.obj";
+    char *wav_filename = "assets/hbday.wav";
     if (argc > 2) {
-        if (!load_obj_file(argv[1], &mesh)) {
-            SDL_Log("Failed to load OBJ file, using default cube");
-            create_default_cube();
-        }
+        obj_filename = argv[1];
+        wav_filename = argv[2];
+    }
+    if (!load_obj_file(obj_filename, &mesh)) {
+        SDL_Log("Failed to load OBJ file");
+    }
 
-        if (!SDL_LoadWAV(argv[2], &spec, &wav_data, &wav_data_len)) {
-            SDL_Log("Couldn't load .wav file: %s", SDL_GetError());
-            return SDL_APP_FAILURE;
-        }
-        stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-        if (!stream) {
-            SDL_Log("Couldn't create audio stream: %s", SDL_GetError());
-            return SDL_APP_FAILURE;
-        }
-        SDL_ResumeAudioStreamDevice(stream);
+    if (!SDL_LoadWAV(wav_filename, &spec, &wav_data, &wav_data_len)) {
+        SDL_Log("Couldn't load .wav file: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
     }
-    else {
-        SDL_Log("No OBJ file specified, using default cube");
-        SDL_Log("Usage: %s <objfile.obj>", argv[0]);
-        SDL_Log("Right-click to spawn confetti!");
-        create_default_cube();
+    stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (!stream) {
+        SDL_Log("Couldn't create audio stream: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
     }
+    SDL_ResumeAudioStreamDevice(stream);
     
     return SDL_APP_CONTINUE;
 }
@@ -548,8 +525,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
         SDL_DestroyTexture(circle_texture);
     }
     
-    if (mesh.vertices) free(mesh.vertices);
-    if (mesh.faces) free(mesh.faces);
+    if (mesh.vertices) SDL_free(mesh.vertices);
+    if (mesh.faces) SDL_free(mesh.faces);
     
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

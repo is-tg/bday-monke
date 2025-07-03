@@ -45,6 +45,12 @@ add_executable(app
     src/main.c
 )
 
+if(EMSCRIPTEN)
+    add_compile_definitions(ASSETS_DIR="/assets/")
+else()
+    add_compile_definitions(ASSETS_DIR="assets/")
+endif()
+
 target_link_libraries(app PRIVATE SDL3::SDL3)
 
 # This is safe to set on all platforms. Otherwise your SDL app will
@@ -53,5 +59,11 @@ set_property(TARGET app PROPERTY WIN32_EXECUTABLE TRUE)
 
 if(EMSCRIPTEN)
     set_property(TARGET app PROPERTY SUFFIX ".html")
-    target_link_options(app PRIVATE "--shell-file=${CMAKE_SOURCE_DIR}/bare.html")
+    target_link_options(app PRIVATE
+        "--shell-file=${CMAKE_SOURCE_DIR}/bare.html"
+        "--preload-file=${CMAKE_SOURCE_DIR}/assets@/assets"
+        "-sINITIAL_MEMORY=64MB"
+        "-sALLOW_MEMORY_GROWTH=1"
+        "--use-preload-plugins"
+    )
 endif()

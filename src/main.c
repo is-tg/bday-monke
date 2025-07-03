@@ -2,8 +2,6 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL.h>
 #include <stdio.h>
-#include "monke_obj.h"
-#include "hbday_wav.h"
 
 #define FCOLOR(r, g, b, a) ((SDL_FColor) {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f})
 #define DARK_GREY FCOLOR(95, 87, 79, 255)
@@ -249,34 +247,21 @@ static Vec3 project_3d_to_2d(Vec3 v, int screen_width, int screen_height) {
     return (Vec3){projected_x, projected_y, v.z};
 }
 
-static int load_obj_embedded(Mesh *mesh) {
-    // Create a memory buffer from the embedded data
-    char *obj_data = (char*)assets_monke_obj;
-    size_t data_len = assets_monke_obj_len;
-    
-    // First pass: count vertices and faces
-    int vertex_count = 0, face_count = 0;
-    char *line_start = obj_data;
-    char *line_end;
-    
-    while (line_start < obj_data + data_len) {
-        // Find end of current line
-        line_end = line_start;
-        while (line_end < obj_data + data_len && *line_end != '\n' && *line_end != '\0') {
-            line_end++;
-        }
-        
-        // Check line type
-        if (line_end > line_start + 1) {
-            if (line_start[0] == 'v' && line_start[1] == ' ') vertex_count++;
-            else if (line_start[0] == 'f' && line_start[1] == ' ') face_count++;
-        }
-        
-        // Move to next line
-        line_start = line_end + 1;
+static int load_obj_file(const char *filename, Mesh *mesh) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        SDL_Log("Failed to open OBJ file: %s", filename);
+        return 0;
     }
     
-    // Allocate memory
+    char line[256];
+    int vertex_count = 0, face_count = 0;
+    
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == 'v' && line[1] == ' ') vertex_count++;
+        else if (line[0] == 'f' && line[1] == ' ') face_count++;
+    }
+    
     mesh->vertices = SDL_malloc(vertex_count * sizeof(Vec3));
     mesh->faces = SDL_malloc(face_count * sizeof(Face));
     mesh->vertex_count = vertex_count;
@@ -284,84 +269,48 @@ static int load_obj_embedded(Mesh *mesh) {
     
     if (!mesh->vertices || !mesh->faces) {
         SDL_Log("Failed to allocate memory for mesh");
+        fclose(file);
         return 0;
     }
     
-    // Second pass: parse data
+    rewind(file);
     int v_index = 0, f_index = 0;
-    line_start = obj_data;
     
-    while (line_start < obj_data + data_len) {
-        line_end = line_start;
-        while (line_end < obj_data + data_len && *line_end != '\n' && *line_end != '\0') {
-            line_end++;
-        }
-        
-        // Null-terminate the line temporarily for parsing
-        char saved_char = *line_end;
-        *line_end = '\0';
-        
-        if (line_end > line_start + 1) {
-            if (line_start[0] == 'v' && line_start[1] == ' ') {
-                float x, y, z;
-                if (SDL_sscanf(line_start, "v %f %f %f", &x, &y, &z) == 3) {
-                    mesh->vertices[v_index++] = (Vec3){x, y, z};
-                }
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == 'v' && line[1] == ' ') {
+            float x, y, z;
+            if (SDL_sscanf(line, "v %f %f %f", &x, &y, &z) == 3) {
+                mesh->vertices[v_index++] = (Vec3){x, y, z};
             }
-            else if (line_start[0] == 'f' && line_start[1] == ' ') {
-                int v1, v2, v3;
-                char *token;
-                char *line_copy = SDL_strdup(line_start);
-                
-                SDL_strtok_r(line_copy + 2, " \t\n", &token);
+        }
+        else if (line[0] == 'f' && line[1] == ' ') {
+            int v1, v2, v3;
+            char *token;
+            SDL_strtok_r(line + 2, " \t\n", &token);
+            
+            if (token) {
+                v1 = SDL_atoi(token) - 1;
+                SDL_strtok_r(NULL, " \t\n", &token);
                 if (token) {
-                    v1 = SDL_atoi(token) - 1;
+                    v2 = SDL_atoi(token) - 1;
                     SDL_strtok_r(NULL, " \t\n", &token);
                     if (token) {
-                        v2 = SDL_atoi(token) - 1;
-                        SDL_strtok_r(NULL, " \t\n", &token);
-                        if (token) {
-                            v3 = SDL_atoi(token) - 1;
-                            
-                            if (v1 >= 0 && v1 < vertex_count && 
-                                v2 >= 0 && v2 < vertex_count && 
-                                v3 >= 0 && v3 < vertex_count) {
-                                mesh->faces[f_index++] = (Face){v1, v2, v3};
-                            }
+                        v3 = SDL_atoi(token) - 1;
+                        
+                        if (v1 >= 0 && v1 < vertex_count && 
+                            v2 >= 0 && v2 < vertex_count && 
+                            v3 >= 0 && v3 < vertex_count) {
+                            mesh->faces[f_index++] = (Face){v1, v2, v3};
                         }
                     }
                 }
-                SDL_free(line_copy);
             }
         }
-        
-        // Restore the character and move to next line
-        *line_end = saved_char;
-        line_start = line_end + 1;
     }
     
-    SDL_Log("Loaded embedded OBJ: %d vertices, %d faces", vertex_count, f_index);
+    fclose(file);
+    SDL_Log("Loaded OBJ: %d vertices, %d faces", vertex_count, f_index);
     mesh->face_count = f_index;
-    return 1;
-}
-
-int load_embedded_wav(SDL_AudioSpec *spec, Uint8 **audio_buf, Uint32 *audio_len) {
-    // Create an SDL_IOStream from the embedded data
-    SDL_IOStream *io = SDL_IOFromConstMem(assets_hbday_wav, assets_hbday_wav_len);
-    if (!io) {
-        SDL_Log("Failed to create IO stream from embedded WAV data: %s", SDL_GetError());
-        return 0;
-    }
-    
-    // Load the WAV data using SDL_LoadWAV_IO
-    if (!SDL_LoadWAV_IO(io, true, spec, audio_buf, audio_len)) {
-        SDL_Log("Failed to load embedded WAV data: %s", SDL_GetError());
-        return 0;
-    }
-    
-    SDL_Log("Loaded embedded WAV: %d Hz, %d channels, %d bytes", 
-            spec->freq, spec->channels, *audio_len);
-    
     return 1;
 }
 
@@ -414,7 +363,7 @@ static void render_mesh(Mesh *mesh, Transform *transform, int screen_width, int 
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
-    if (SDL_GetAudioStreamQueued(stream) < (int)wav_data_len) {
+    if (SDL_GetAudioStreamQueued(stream) < (int)(wav_data_len * 0.5f)) {
         SDL_PutAudioStreamData(stream, wav_data, wav_data_len);
     }
 
@@ -424,6 +373,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     Uint64 current_performance_counter = SDL_GetPerformanceCounter();
     float delta_time = (float)(current_performance_counter - last_performance_counter) / (float)performance_frequency;
     last_performance_counter = current_performance_counter;
+
+    if (delta_time > 0.1f) delta_time = 0.1f;
     
     clear(DARK_GREY);
 
@@ -435,7 +386,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     confetti_spawn_timer += delta_time;
     if (confetti_spawn_timer >= CONFETTI_SPAWN_INTERVAL) {
-        confetti_spawn_timer -= CONFETTI_SPAWN_INTERVAL; 
+        confetti_spawn_timer = 0.0f;
         spawn_confetti(random_float(0, w), random_float(0, h));
     }
     
@@ -548,7 +499,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     
-    if (!SDL_CreateWindowAndRenderer("Birthday Monkey", 800, 600, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+    if (!SDL_CreateWindowAndRenderer("OBJ Renderer", 800, 600, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
         SDL_Log("SDL_CreateWindowAndRenderer() failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -564,11 +515,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     
     SDL_srand((unsigned int)SDL_GetTicks());
     
-    if (!load_obj_embedded(&mesh)) {
+    char *obj_filename = ASSETS_DIR "monke.obj";
+    char *wav_filename = ASSETS_DIR "hbday.wav";
+    if (argc > 2) {
+        obj_filename = argv[1];
+        wav_filename = argv[2];
+    }
+    if (!load_obj_file(obj_filename, &mesh)) {
         SDL_Log("Failed to load OBJ file");
     }
 
-    if (!load_embedded_wav(&spec, &wav_data, &wav_data_len)) {
+    if (!SDL_LoadWAV(wav_filename, &spec, &wav_data, &wav_data_len)) {
         SDL_Log("Couldn't load .wav file: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }

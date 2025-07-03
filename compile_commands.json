@@ -1,7 +1,7 @@
 [
 {
   "directory": "C:/Users/Tharun/Documents/projects/bday-monke/build",
-  "command": "C:\\PROGRA~1\\LLVM\\bin\\clang.exe -isystem C:/Users/Tharun/vcpkg/installed/x64-windows/include -O3 -DNDEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -o CMakeFiles\\app.dir\\src\\main.c.obj -c C:\\Users\\Tharun\\Documents\\projects\\bday-monke\\src\\main.c",
+  "command": "C:\\PROGRA~1\\LLVM\\bin\\clang.exe -DASSETS_DIR=\\\"assets/\\\" -IC:/Users/Tharun/vcpkg/installed/x64-windows/include -O3 -DNDEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -o CMakeFiles\\app.dir\\src\\main.c.obj -c C:\\Users\\Tharun\\Documents\\projects\\bday-monke\\src\\main.c",
   "file": "C:\\Users\\Tharun\\Documents\\projects\\bday-monke\\src\\main.c",
   "output": "CMakeFiles\\app.dir\\src\\main.c.obj"
 }

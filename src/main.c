@@ -285,15 +285,15 @@ static int load_obj_file(const char *filename, Mesh *mesh) {
         }
         else if (line[0] == 'f' && line[1] == ' ') {
             int v1, v2, v3;
-            char *token;
-            SDL_strtok_r(line + 2, " \t\n", &token);
+            char *save;
+            char *token = SDL_strtok_r(line + 2, " \t\n", &save);
             
             if (token) {
                 v1 = SDL_atoi(token) - 1;
-                SDL_strtok_r(NULL, " \t\n", &token);
+                token = SDL_strtok_r(NULL, " \t\n", &save);
                 if (token) {
                     v2 = SDL_atoi(token) - 1;
-                    SDL_strtok_r(NULL, " \t\n", &token);
+                    token = SDL_strtok_r(NULL, " \t\n", &save);
                     if (token) {
                         v3 = SDL_atoi(token) - 1;
                         
